@@ -6,3 +6,7 @@ class Airport(BaseModel):
     iso_country: str
     latitude_deg: float
     longitude_deg: float
+
+class VisitRequest(BaseModel):
+    user_name: str
+    iata_code: str
