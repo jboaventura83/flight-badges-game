@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from typing import List
 import psycopg2
@@ -132,3 +132,30 @@ def leaderboard():
 
     result = [{"user_name": r[0], "score": r[1]} for r in rows]
     return result
+
+@app.get("/airports_in_bounds/", response_model=List[Airport])
+def airports_in_bounds(
+    min_lat: float = Query(...),
+    max_lat: float = Query(...),
+    min_lon: float = Query(...),
+    max_lon: float = Query(...)
+):
+    conn = get_db_connection()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+
+    # Exemplo simples: traz até 300 aeroportos da área visível
+    cur.execute("""
+        SELECT iata_code, name, iso_country, latitude_deg, longitude_deg
+        FROM airports
+        WHERE latitude_deg BETWEEN %s AND %s
+          AND longitude_deg BETWEEN %s AND %s
+          AND iata_code IS NOT NULL
+          AND iata_code <> ''
+        LIMIT 70
+    """, (min_lat, max_lat, min_lon, max_lon))
+
+    rows = cur.fetchall()
+    cur.close()
+    conn.close()
+
+    return rows

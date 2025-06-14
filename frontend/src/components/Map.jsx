@@ -1,8 +1,9 @@
-import React, { useEffect, useState } from "react";
-import { MapContainer, TileLayer, Marker, Popup } from "react-leaflet";
+import React, { useEffect, useState, useRef } from "react";
+import { MapContainer, TileLayer, Marker, Popup, useMapEvents } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 
+// (mantemos os ícones como antes)
 // Ícones personalizados
 const visitedIcon = new L.Icon({
   iconUrl: "https://cdn-icons-png.flaticon.com/512/190/190411.png",
@@ -26,37 +27,39 @@ export default function Map() {
   const [visited, setVisited] = useState([]);
   const [user, setUser] = useState("");
 
-  // Busca usuário salvo
+  const mapRef = useRef();
+
+  // Primeiro carregamento do user
   useEffect(() => {
     const savedUser = localStorage.getItem("user");
     if (savedUser) {
       setUser(savedUser);
     } else {
-      const inputUser = prompt("Digite seu nome para iniciar:");
+      const inputUser = prompt("Digite seu nome:");
       localStorage.setItem("user", inputUser);
       setUser(inputUser);
     }
   }, []);
 
-  // Busca todos aeroportos
-  useEffect(() => {
-    fetch("http://localhost:8000/airports/")
-      .then((res) => res.json())
-      .then((data) => setAirports(data))
-      .catch(console.error);
-  }, []);
-
-  // Busca aeroportos já visitados pelo usuário
+  // Busca as visitas existentes do usuário
   useEffect(() => {
     if (user) {
       fetch(`http://localhost:8000/visited/${user}`)
         .then((res) => res.json())
-        .then((data) => setVisited(data))
-        .catch(console.error);
+        .then((data) => setVisited(data));
     }
   }, [user]);
 
-  // Marcar aeroporto como visitado
+  const fetchAirportsInBounds = (bounds) => {
+    const { _southWest, _northEast } = bounds;
+    const url = `http://localhost:8000/airports_in_bounds/?min_lat=${_southWest.lat}&max_lat=${_northEast.lat}&min_lon=${_southWest.lng}&max_lon=${_northEast.lng}`;
+    fetch(url)
+      .then((res) => res.json())
+      .then((data) => setAirports(data))
+      .catch(console.error);
+  };
+
+   // Marcar aeroporto como visitado
   const handleVisit = (iata_code) => {
     fetch("http://localhost:8000/visit", {
       method: "POST",
@@ -73,16 +76,41 @@ export default function Map() {
       .catch(console.error);
   };
 
+  // Hook que ouve zoom/pan
+  const MapEventHandler = () => {
+    const map = useMapEvents({
+      moveend: () => {
+        const bounds = map.getBounds();
+        fetchAirportsInBounds(bounds);
+      }
+    });
+    return null;
+  };
+
+  // Inicialmente busca bounds iniciais
+  useEffect(() => {
+    const map = mapRef.current;
+    if (map) {
+      fetchAirportsInBounds(map.getBounds());
+    }
+  }, []);
+
   return (
     <div style={{ height: "100vh", width: "100vw" }}>
-      <MapContainer center={[20, 0]} zoom={2} style={{ height: "100%", width: "100%" }}>
+      <MapContainer 
+        center={[20, 0]} 
+        zoom={2} 
+        style={{ height: "100%", width: "100%" }}
+        whenCreated={mapInstance => { mapRef.current = mapInstance }}
+      >
         <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
+        <MapEventHandler />
 
         {airports.map(({ iata_code, name, iso_country, latitude_deg, longitude_deg }) => {
           const isVisited = visited.includes(iata_code);
           return (
             <Marker
-              key={iata_code || `${latitude_deg}-${longitude_deg}`}
+              key={iata_code}
               position={[latitude_deg, longitude_deg]}
               icon={isVisited ? visitedIcon : defaultIcon}
             >
