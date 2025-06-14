@@ -114,3 +114,21 @@ def get_visited(user_name: str):
     conn.close()
 
     return [r[0] for r in rows]
+
+@app.get("/leaderboard/")
+def leaderboard():
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT user_name, COUNT(*) * 10 AS score
+        FROM user_airports
+        GROUP BY user_name
+        ORDER BY score DESC
+        LIMIT 10
+    """)
+    rows = cur.fetchall()
+    cur.close()
+    conn.close()
+
+    result = [{"user_name": r[0], "score": r[1]} for r in rows]
+    return result
