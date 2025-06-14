@@ -1,10 +1,10 @@
 import React, { useEffect, useState, useRef } from "react";
 import { MapContainer, TileLayer, Marker, Popup, useMapEvents } from "react-leaflet";
+import MarkerClusterGroup from 'react-leaflet-cluster';
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 
-// (mantemos os ícones como antes)
-// Ícones personalizados
+// Ícones
 const visitedIcon = new L.Icon({
   iconUrl: "https://cdn-icons-png.flaticon.com/512/190/190411.png",
   iconSize: [30, 30],
@@ -26,10 +26,10 @@ export default function Map() {
   const [airports, setAirports] = useState([]);
   const [visited, setVisited] = useState([]);
   const [user, setUser] = useState("");
-
+  const [loading, setLoading] = useState(false);
   const mapRef = useRef();
 
-  // Primeiro carregamento do user
+  // Load user
   useEffect(() => {
     const savedUser = localStorage.getItem("user");
     if (savedUser) {
@@ -41,7 +41,7 @@ export default function Map() {
     }
   }, []);
 
-  // Busca as visitas existentes do usuário
+  // Load visited
   useEffect(() => {
     if (user) {
       fetch(`http://localhost:8000/visited/${user}`)
@@ -53,13 +53,29 @@ export default function Map() {
   const fetchAirportsInBounds = (bounds) => {
     const { _southWest, _northEast } = bounds;
     const url = `http://localhost:8000/airports_in_bounds/?min_lat=${_southWest.lat}&max_lat=${_northEast.lat}&min_lon=${_southWest.lng}&max_lon=${_northEast.lng}`;
+    setLoading(true);
     fetch(url)
       .then((res) => res.json())
       .then((data) => setAirports(data))
-      .catch(console.error);
+      .catch(console.error)
+      .finally(() => setLoading(false));
   };
 
-   // Marcar aeroporto como visitado
+  let debounceTimer = null;
+
+  const MapEventHandler = () => {
+    const map = useMapEvents({
+      moveend: () => {
+        clearTimeout(debounceTimer);
+        debounceTimer = setTimeout(() => {
+          const bounds = map.getBounds();
+          fetchAirportsInBounds(bounds);
+        }, 300);
+      }
+    });
+    return null;
+  };
+
   const handleVisit = (iata_code) => {
     fetch("http://localhost:8000/visit", {
       method: "POST",
@@ -76,27 +92,18 @@ export default function Map() {
       .catch(console.error);
   };
 
-  // Hook que ouve zoom/pan
-  const MapEventHandler = () => {
-    const map = useMapEvents({
-      moveend: () => {
-        const bounds = map.getBounds();
-        fetchAirportsInBounds(bounds);
-      }
-    });
-    return null;
-  };
-
-  // Inicialmente busca bounds iniciais
-  useEffect(() => {
-    const map = mapRef.current;
-    if (map) {
-      fetchAirportsInBounds(map.getBounds());
-    }
-  }, []);
-
   return (
     <div style={{ height: "100vh", width: "100vw" }}>
+      {loading && (
+        <div style={{
+          position: 'absolute', top: 10, left: '50%', transform: 'translateX(-50%)',
+          backgroundColor: '#000000aa', padding: '8px 16px',
+          color: 'white', borderRadius: '8px', zIndex: 1000
+        }}>
+          Carregando aeroportos...
+        </div>
+      )}
+
       <MapContainer 
         center={[20, 0]} 
         zoom={2} 
@@ -106,26 +113,29 @@ export default function Map() {
         <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
         <MapEventHandler />
 
-        {airports.map(({ iata_code, name, iso_country, latitude_deg, longitude_deg }) => {
-          const isVisited = visited.includes(iata_code);
-          return (
-            <Marker
-              key={iata_code}
-              position={[latitude_deg, longitude_deg]}
-              icon={isVisited ? visitedIcon : defaultIcon}
-            >
-              <Popup>
-                <strong>{name}</strong> ({iata_code})<br />
-                País: {iso_country} <br />
-                {isVisited ? (
-                  <span style={{ color: "green" }}>Já visitado ✅</span>
-                ) : (
-                  <button onClick={() => handleVisit(iata_code)}>Marcar como visitado</button>
-                )}
-              </Popup>
-            </Marker>
-          );
-        })}
+        <MarkerClusterGroup chunkedLoading>
+          {airports.map(({ iata_code, name, iso_country, latitude_deg, longitude_deg }) => {
+            const isVisited = visited.includes(iata_code);
+            return (
+              <Marker
+                key={iata_code}
+                position={[latitude_deg, longitude_deg]}
+                icon={isVisited ? visitedIcon : defaultIcon}
+              >
+                <Popup>
+                  <strong>{name}</strong> ({iata_code})<br />
+                  País: {iso_country} <br />
+                  {isVisited ? (
+                    <span style={{ color: "green" }}>Já visitado ✅</span>
+                  ) : (
+                    <button onClick={() => handleVisit(iata_code)}>Marcar como visitado</button>
+                  )}
+                </Popup>
+              </Marker>
+            );
+          })}
+        </MarkerClusterGroup>
+
       </MapContainer>
     </div>
   );
